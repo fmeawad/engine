@@ -28,8 +28,7 @@ bool IOSSurfaceGL::IsValid() const {
   return render_target_->IsValid();
 }
 
-std::unique_ptr<RendererContextSwitchManager::RendererContextSwitch>
-IOSSurfaceGL::ResourceContextMakeCurrent() {
+bool IOSSurfaceGL::ResourceContextMakeCurrent() {
   return context_->ResourceMakeCurrent();
 }
 
@@ -50,19 +49,20 @@ intptr_t IOSSurfaceGL::GLContextFBO() const {
   return IsValid() ? render_target_->framebuffer() : GL_NONE;
 }
 
-bool IOSSurfaceGL::UseOffscreenSurface() const {
-  // The onscreen surface wraps a GL renderbuffer, which is extremely slow to read.
-  // Certain filter effects require making a copy of the current destination, so we
-  // always render to an offscreen surface, which will be much quicker to read/copy.
-  return true;
+bool IOSSurfaceGL::SurfaceSupportsReadback() const {
+  // The onscreen surface wraps a GL renderbuffer, which is extremely slow to read on iOS.
+  // Certain filter effects, in particular BackdropFilter, require making a copy of
+  // the current destination. For performance, the iOS surface will specify that it
+  // does not support readback so that the engine compositor can implement a workaround
+  // such as rendering the scene to an offscreen surface or Skia saveLayer.
+  return false;
 }
 
-std::unique_ptr<RendererContextSwitchManager::RendererContextSwitch>
-IOSSurfaceGL::GLContextMakeCurrent() {
+bool IOSSurfaceGL::GLContextMakeCurrent() {
   if (!IsValid()) {
-    return std::make_unique<RendererContextSwitchManager::RendererContextSwitchPureResult>(false);
+    return false;
   }
-  return render_target_->MakeCurrent();
+  return render_target_->UpdateStorageSizeIfNecessary() && context_->MakeCurrent();
 }
 
 bool IOSSurfaceGL::GLContextClearCurrent() {
@@ -73,11 +73,6 @@ bool IOSSurfaceGL::GLContextClearCurrent() {
 bool IOSSurfaceGL::GLContextPresent() {
   TRACE_EVENT0("flutter", "IOSSurfaceGL::GLContextPresent");
   return IsValid() && render_target_->PresentRenderBuffer();
-}
-
-// |GPUSurfaceGLDelegate|
-std::shared_ptr<RendererContextSwitchManager> IOSSurfaceGL::GetRendererContextSwitchManager() {
-  return context_->GetIOSGLContextSwitchManager();
 }
 
 // |ExternalViewEmbedder|
@@ -151,8 +146,7 @@ bool IOSSurfaceGL::SubmitFrame(GrContext* context) {
   if (platform_views_controller == nullptr) {
     return true;
   }
-  platform_views_controller->SetRendererContextSwitchManager(
-      context_->GetIOSGLContextSwitchManager());
+
   bool submitted = platform_views_controller->SubmitFrame(std::move(context), context_);
   [CATransaction commit];
   return submitted;

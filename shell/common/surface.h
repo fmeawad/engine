@@ -10,7 +10,6 @@
 #include "flutter/flow/compositor_context.h"
 #include "flutter/flow/embedded_views.h"
 #include "flutter/fml/macros.h"
-#include "flutter/shell/common/renderer_context_switch_manager.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 
 namespace flutter {
@@ -22,7 +21,9 @@ class SurfaceFrame {
   using SubmitCallback =
       std::function<bool(const SurfaceFrame& surface_frame, SkCanvas* canvas)>;
 
-  SurfaceFrame(sk_sp<SkSurface> surface, SubmitCallback submit_callback);
+  SurfaceFrame(sk_sp<SkSurface> surface,
+               bool supports_readback,
+               const SubmitCallback& submit_callback);
 
   ~SurfaceFrame();
 
@@ -32,9 +33,12 @@ class SurfaceFrame {
 
   sk_sp<SkSurface> SkiaSurface() const;
 
+  bool supports_readback() { return supports_readback_; }
+
  private:
   bool submitted_;
   sk_sp<SkSurface> surface_;
+  bool supports_readback_;
   SubmitCallback submit_callback_;
 
   bool PerformSubmit();
@@ -59,8 +63,7 @@ class Surface {
 
   virtual flutter::ExternalViewEmbedder* GetExternalViewEmbedder();
 
-  virtual std::unique_ptr<RendererContextSwitchManager::RendererContextSwitch>
-  MakeRenderContextCurrent();
+  virtual bool MakeRenderContextCurrent();
 
  private:
   FML_DISALLOW_COPY_AND_ASSIGN(Surface);

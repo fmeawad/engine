@@ -5,14 +5,15 @@
 #include <array>
 
 #include <gtest/gtest.h>
+#include <lib/async-loop/default.h>
 #include <lib/zx/event.h>
 #include <zircon/syscalls.h>
 
 #include "flutter/fml/synchronization/waitable_event.h"
+#include "flutter/fml/time/time_delta.h"
+#include "flutter/fml/time/time_point.h"
 #include "flutter/shell/common/thread_host.h"
 #include "flutter/shell/common/vsync_waiter.h"
-#include "flutter/shell/platform/fuchsia/flutter/task_runner_adapter.h"
-#include "flutter/shell/platform/fuchsia/flutter/thread.h"
 #include "flutter/shell/platform/fuchsia/flutter/vsync_waiter.h"
 
 namespace flutter_runner_test {
@@ -47,21 +48,17 @@ class VsyncWaiterTest : public testing::Test {
 };
 
 TEST_F(VsyncWaiterTest, AwaitVsync) {
-  std::array<std::unique_ptr<flutter_runner::Thread>, 3> threads;
-
-  for (auto& thread : threads) {
-    thread.reset(new flutter_runner::Thread());
-  }
-
-  async::Loop loop(&kAsyncLoopConfigAttachToThread);
+  flutter::ThreadHost thread_host(
+      "VsyncWaiterTests.",
+      flutter::ThreadHost::Type::Platform | flutter::ThreadHost::Type::IO |
+          flutter::ThreadHost::Type::UI | flutter::ThreadHost::Type::GPU);
 
   const flutter::TaskRunners task_runners(
-      "VsyncWaiterTests",  // Dart thread labels
-      flutter_runner::CreateFMLTaskRunner(
-          async_get_default_dispatcher()),  // platform
-      flutter_runner::CreateFMLTaskRunner(threads[0]->dispatcher()),  // gpu
-      flutter_runner::CreateFMLTaskRunner(threads[1]->dispatcher()),  // ui
-      flutter_runner::CreateFMLTaskRunner(threads[2]->dispatcher())   // io
+      "VsyncWaiterTests",                            // Dart thread labels
+      thread_host.platform_thread->GetTaskRunner(),  // platform
+      thread_host.gpu_thread->GetTaskRunner(),       // gpu
+      thread_host.ui_thread->GetTaskRunner(),        // ui
+      thread_host.io_thread->GetTaskRunner()         // io
   );
 
   auto vsync_waiter = CreateVsyncWaiter(std::move(task_runners));
@@ -79,9 +76,49 @@ TEST_F(VsyncWaiterTest, AwaitVsync) {
   EXPECT_FALSE(did_timeout);
 
   vsync_waiter.reset();
-  for (const auto& thread : threads) {
-    thread->Quit();
-  }
+}
+
+TEST_F(VsyncWaiterTest, SnapToNextPhaseOverlapsWithNow) {
+  const auto now = fml::TimePoint::Now();
+  const auto last_presentation_time = now - fml::TimeDelta::FromNanoseconds(10);
+  const auto delta = fml::TimeDelta::FromNanoseconds(10);
+  const auto next_vsync = flutter_runner::VsyncWaiter::SnapToNextPhase(
+      now, last_presentation_time, delta);
+
+  EXPECT_EQ(now + delta, next_vsync);
+}
+
+TEST_F(VsyncWaiterTest, SnapToNextPhaseAfterNow) {
+  const auto now = fml::TimePoint::Now();
+  const auto last_presentation_time = now - fml::TimeDelta::FromNanoseconds(9);
+  const auto delta = fml::TimeDelta::FromNanoseconds(10);
+  const auto next_vsync = flutter_runner::VsyncWaiter::SnapToNextPhase(
+      now, last_presentation_time, delta);
+
+  // math here: 10 - 9 = 1
+  EXPECT_EQ(now + fml::TimeDelta::FromNanoseconds(1), next_vsync);
+}
+
+TEST_F(VsyncWaiterTest, SnapToNextPhaseAfterNowMultiJump) {
+  const auto now = fml::TimePoint::Now();
+  const auto last_presentation_time = now - fml::TimeDelta::FromNanoseconds(34);
+  const auto delta = fml::TimeDelta::FromNanoseconds(10);
+  const auto next_vsync = flutter_runner::VsyncWaiter::SnapToNextPhase(
+      now, last_presentation_time, delta);
+
+  // zeroes: -34, -24, -14, -4, 6, ...
+  EXPECT_EQ(now + fml::TimeDelta::FromNanoseconds(6), next_vsync);
+}
+
+TEST_F(VsyncWaiterTest, SnapToNextPhaseAfterNowMultiJumpAccountForCeils) {
+  const auto now = fml::TimePoint::Now();
+  const auto last_presentation_time = now - fml::TimeDelta::FromNanoseconds(20);
+  const auto delta = fml::TimeDelta::FromNanoseconds(16);
+  const auto next_vsync = flutter_runner::VsyncWaiter::SnapToNextPhase(
+      now, last_presentation_time, delta);
+
+  // zeroes: -20, -4, 12, 28, ...
+  EXPECT_EQ(now + fml::TimeDelta::FromNanoseconds(12), next_vsync);
 }
 
 }  // namespace flutter_runner_test

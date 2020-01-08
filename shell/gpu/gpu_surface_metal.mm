@@ -152,7 +152,7 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceMetal::AcquireFrame(const SkISize& size)
     return true;
   };
 
-  return std::make_unique<SurfaceFrame>(std::move(surface), submit_callback);
+  return std::make_unique<SurfaceFrame>(std::move(surface), true, submit_callback);
 }
 
 // |Surface|
@@ -175,10 +175,9 @@ flutter::ExternalViewEmbedder* GPUSurfaceMetal::GetExternalViewEmbedder() {
 }
 
 // |Surface|
-std::unique_ptr<RendererContextSwitchManager::RendererContextSwitch>
-GPUSurfaceMetal::MakeRenderContextCurrent() {
+bool GPUSurfaceMetal::MakeRenderContextCurrent() {
   // This backend has no such concept.
-  return std::make_unique<RendererContextSwitchManager::RendererContextSwitchPureResult>(true);
+  return true;
 }
 
 void GPUSurfaceMetal::ReleaseUnusedDrawableIfNecessary() {

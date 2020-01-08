@@ -10,8 +10,12 @@
 namespace flutter {
 
 SurfaceFrame::SurfaceFrame(sk_sp<SkSurface> surface,
-                           SubmitCallback submit_callback)
-    : submitted_(false), surface_(surface), submit_callback_(submit_callback) {
+                           bool supports_readback,
+                           const SubmitCallback& submit_callback)
+    : submitted_(false),
+      surface_(surface),
+      supports_readback_(supports_readback),
+      submit_callback_(submit_callback) {
   FML_DCHECK(submit_callback_);
 }
 
@@ -60,10 +64,8 @@ flutter::ExternalViewEmbedder* Surface::GetExternalViewEmbedder() {
   return nullptr;
 }
 
-std::unique_ptr<RendererContextSwitchManager::RendererContextSwitch>
-Surface::MakeRenderContextCurrent() {
-  return std::make_unique<
-      RendererContextSwitchManager::RendererContextSwitchPureResult>(true);
+bool Surface::MakeRenderContextCurrent() {
+  return true;
 }
 
 }  // namespace flutter
